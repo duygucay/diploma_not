@@ -6,6 +6,25 @@ import shutil
 from datetime import datetime
 import io
 
+# --- BASİT ŞİFRE KORUMASI ---
+PAROLA = "diploma2026"  # İstediğiniz şifreyi buraya yazabilirsiniz
+
+if "giris_yapildi" not in st.session_state:
+    st.session_state.giris_yapildi = False
+
+if not st.session_state.giris_yapildi:
+    st.title("🔒 Diploma Projesi - Giriş Paneli")
+    girilen_sifre = st.text_input("Lütfen erişim şifresini giriniz:", type="password")
+    if st.button("Giriş Yap"):
+        if girilen_sifre == PAROLA:
+            st.session_state.giris_yapildi = True
+            st.success("Giriş başarılı!")
+            st.rerun()
+        else:
+            st.error("Hatalı şifre!")
+    st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
+
+
 # --- SAYFA VE ARAYÜZ AYARLARI ---
 st.set_page_config(page_title="2026-27 Güz Dönemi Diploma Projesi Notları", layout="wide")
 
