@@ -6,27 +6,8 @@ import shutil
 from datetime import datetime
 import io
 
-# --- BASİT ŞİFRE KORUMASI ---
-PAROLA = "dp2026"  # İstediğiniz şifreyi buraya yazabilirsiniz
-
-if "giris_yapildi" not in st.session_state:
-    st.session_state.giris_yapildi = False
-
-if not st.session_state.giris_yapildi:
-    st.title("🔒 Diploma Projesi - Giriş Paneli")
-    girilen_sifre = st.text_input("Lütfen erişim şifresini giriniz:", type="password")
-    if st.button("Giriş Yap"):
-        if girilen_sifre == PAROLA:
-            st.session_state.giris_yapildi = True
-            st.success("Giriş başarılı!")
-            st.rerun()
-        else:
-            st.error("Hatalı şifre!")
-    st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
-
-
 # --- SAYFA VE ARAYÜZ AYARLARI ---
-st.set_page_config(page_title="2026-27 Güz Dönemi Diploma Projesi Notları", layout="wide")
+st.set_page_config(page_title="Trakya Üniv. - Proje Değerlendirme Sistemi", layout="wide")
 
 # --- DİNAMİK DOSYA YOLU TESPİTİ ---
 CALISMA_KLASORU = os.path.dirname(os.path.abspath(__file__))
@@ -69,6 +50,11 @@ ogrenci_ham_verileri = [
 ]
 
 not_anahtarlari = ["1_eskiz", "2_eskiz", "1_juri", "2_juri", "3_juri", "final", "butunleme"]
+
+# --- TÜRKÇE MANTIKLI KÜÇÜK HARF DÖNÜŞTÜRÜCÜ ---
+def tr_lower(text):
+    if not text: return ""
+    return str(text).replace("İ", "i").replace("I", "ı").lower()
 
 # --- VERİ YÜKLEME VE İLKLENDİRME ---
 def verileri_yukle():
@@ -125,16 +111,16 @@ def guvenli_float(val):
     s = str(val).strip().upper()
     if s in ["", "-", "NAN", "NONE", "NULL"]: return ""
     if "GEÇ" in s: return "Geçti"
-    if s == "G": return "G" # 'g' yazılsa dahi 'G' yapar
+    if s == "G": return "G"
     try:
         num = float(s.replace(",", "."))
         num_round = round(num)
         if 0 <= num_round <= 100:
             return num_round
         else:
-            return None # 0-100 aralığı dışındaki sayılar reddedilir
+            return None
     except:
-        return None # Sayı veya 'G' dışında kalan tüm girdiler reddedilir
+        return None
 
 # --- HESAPLAMA MANTIĞI ---
 def ana_sayfa_ortalama_hesapla(h1_notlari, h2_notlari, h3_notlari):
@@ -242,7 +228,7 @@ for no, veri in sorted(st.session_state.ogrenciler.items(), key=lambda x: x[1]["
     ana_liste.append({
         "Sıra": veri["sira"], "Ders Kodu": veri["kod"], "Yürütücü": veri["yurutucu"], 
         "No": no, "Ad Soyad": veri["ad"], 
-        "1. Eskiz": str_notlar['1_eskiz'], "2. Eskiz": str_notlar['2_eskiz'], 
+        "Eskiz 1": str_notlar['1_eskiz'], "Eskiz 2": str_notlar['2_eskiz'], 
         "1. jüri": j1_str, "2. jüri": j2_str, "3. jüri": j3_str, 
         "Final": str_notlar['final'], "Final ORTALAMA": final_ort, 
         "Bütünleme": but_hucre_degeri, "Büt ORTALAMA": but_ort
@@ -259,12 +245,14 @@ with tab_ana:
         
     st.dataframe(df_ana, use_container_width=True, hide_index=True)
 
-# OTOMATİK KAYITLI & SIKI DOĞRULAMALI HOCA SEKMESİ
+# ANLIK SÜZMELİ VE ANINDA KAYITLI HOCA SEKMESİ
 def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     st.markdown(f"### 🔍 {hoca_adi} Not Giriş Ekranı")
     st.caption("⚡ Sadece **0-100** arası notlar veya **'G'** / **'g'** harfi kabul edilir. Notlar anında kaydedilir.")
     
-    arama_metni = st.text_input("Öğrenci Ara (İsim veya No):", key=f"arama_{hoca_kodu}").lower()
+    # Arama girdisi (Her karakterde otomatik çalışır)
+    arama_raw = st.text_input("Öğrenci Ara (İsim veya No):", key=f"arama_{hoca_kodu}")
+    arama_metni = tr_lower(arama_raw)
     
     gosterilecek_veriler = []
     for no, veri in sorted(st.session_state.ogrenciler.items(), key=lambda x: x[1]["sira"]):
@@ -276,16 +264,22 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
         satir = {
             "Sıra": veri["sira"], "Ders Kodu": veri["kod"], "Yürütücü": veri["yurutucu"], 
             "No": no, "Ad Soyad": veri["ad"],
-            "1. Eskiz": str(notlar["1_eskiz"]), "2. Eskiz": str(notlar["2_eskiz"]), 
-            "1. Jüri": str(notlar["1_juri"]), "2. Jüri": str(notlar["2_juri"]), "3. Jüri": str(notlar["3_juri"]), 
+            "Eskiz 1": str(notlar["1_eskiz"]), "Eskiz 2": str(notlar["2_eskiz"]), 
+            "Jüri 1": str(notlar["1_juri"]), "Jüri 2": str(notlar["2_juri"]), "Jüri 3": str(notlar["3_juri"]), 
             "Final": str(notlar["final"]), "Bütünleme": str(gosterilecek_but)
         }
         hedef_liste.append(satir)
         
-        if arama_metni in veri["ad"].lower() or arama_metni in str(no):
+        # Türkçe uyumlu anlık filtreleme
+        if not arama_metni or arama_metni in tr_lower(veri["ad"]) or arama_metni in str(no):
             gosterilecek_veriler.append(satir)
             
-    df_hoca = pd.DataFrame(gosterilecek_veriler)
+    sutunlar_listesi = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad", "Eskiz 1", "Eskiz 2", "Jüri 1", "Jüri 2", "Jüri 3", "Final", "Bütünleme"]
+    if gosterilecek_veriler:
+        df_hoca = pd.DataFrame(gosterilecek_veriler)
+    else:
+        df_hoca = pd.DataFrame(columns=sutunlar_listesi)
+        
     kilitli_sutunlar = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad"]
     
     duzenlenen_df = st.data_editor(
@@ -297,8 +291,8 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     )
     
     sutun_haritasi = [
-        ("1. Eskiz", "1_eskiz"), ("2. Eskiz", "2_eskiz"), 
-        ("1. Jüri", "1_juri"), ("2. Jüri", "2_juri"), ("3. Jüri", "3_juri"), 
+        ("Eskiz 1", "1_eskiz"), ("Eskiz 2", "2_eskiz"), 
+        ("Jüri 1", "1_juri"), ("Jüri 2", "2_juri"), ("Jüri 3", "3_juri"), 
         ("Final", "final"), ("Bütünleme", "butunleme")
     ]
     
@@ -314,7 +308,6 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
             if islenmis_deger == "Geçti": 
                 continue
                 
-            # Eğer 0-100 dışı sayı veya geçersiz karakter girildiyse reddet
             if islenmis_deger is None:
                 hata_mesaji = f"❌ **{row['Ad Soyad']}** öğrencisinin **{sutun_adi}** sütununa girilen **'{ham_val}'** değeri geçersizdir! Lütfen sadece **0-100** arası bir not veya **'G'** harfi giriniz."
                 break
