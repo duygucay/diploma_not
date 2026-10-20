@@ -6,8 +6,27 @@ import shutil
 from datetime import datetime
 import io
 
+
+# --- BASİT ŞİFRE KORUMASI ---
+PAROLA = "dp2026"  # İstediğiniz şifreyi buraya yazabilirsiniz
+
+if "giris_yapildi" not in st.session_state:
+    st.session_state.giris_yapildi = False
+
+if not st.session_state.giris_yapildi:
+    st.title("🔒 Diploma Projesi Not - Giriş Paneli")
+    girilen_sifre = st.text_input("Lütfen erişim şifresini giriniz:", type="password")
+    if st.button("Giriş Yap"):
+        if girilen_sifre == PAROLA:
+            st.session_state.giris_yapildi = True
+            st.success("Giriş başarılı!")
+            st.rerun()
+        else:
+            st.error("Hatalı şifre!")
+    st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
+
 # --- SAYFA VE ARAYÜZ AYARLARI ---
-st.set_page_config(page_title="Trakya Üniv. - Proje Değerlendirme Sistemi", layout="wide")
+st.set_page_config(page_title="Diploma Projesi Not Sistemi", layout="wide")
 
 # --- DİNAMİK DOSYA YOLU TESPİTİ ---
 CALISMA_KLASORU = os.path.dirname(os.path.abspath(__file__))
@@ -196,7 +215,7 @@ def excel_olustur(df_ana, df_h1, df_h2, df_h3):
     return processed_data
 
 # --- ARAYÜZ TASARIMI ---
-st.title("🎓 Trakya Üniversitesi - Proje Değerlendirme Sistemi")
+st.title("🎓 Diploma Projesi Not Sistemi")
 
 tab_ana, tab_hoca1, tab_hoca2, tab_hoca3 = st.tabs([
     "🏠 ANA SAYFA (Genel Sonuçlar)", 
