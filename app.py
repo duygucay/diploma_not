@@ -26,7 +26,7 @@ if not st.session_state.giris_yapildi:
     st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
 
 # --- SAYFA VE ARAYÜZ AYARLARI ---
-st.set_page_config(page_title="Diploma Projesi Not Sistemi", layout="wide")
+st.set_page_config(page_title="2026-2027 Güz Dönemi\nDiploma Projesi Not Sistemi", layout="wide")
 
 # --- DİNAMİK DOSYA YOLU TESPİTİ ---
 CALISMA_KLASORU = os.path.dirname(os.path.abspath(__file__))
@@ -215,7 +215,7 @@ def excel_olustur(df_ana, df_h1, df_h2, df_h3):
     return processed_data
 
 # --- ARAYÜZ TASARIMI ---
-st.title("🎓 Diploma Projesi Not Sistemi")
+st.title("🎓 2026-2027 Güz Dönemi - Diploma Projesi Not Sistemi")
 
 tab_ana, tab_hoca1, tab_hoca2, tab_hoca3 = st.tabs([
     "🏠 ANA SAYFA (Genel Sonuçlar)", 
@@ -247,7 +247,7 @@ for no, veri in sorted(st.session_state.ogrenciler.items(), key=lambda x: x[1]["
     ana_liste.append({
         "Sıra": veri["sira"], "Ders Kodu": veri["kod"], "Yürütücü": veri["yurutucu"], 
         "No": no, "Ad Soyad": veri["ad"], 
-        "Eskiz 1": str_notlar['1_eskiz'], "Eskiz 2": str_notlar['2_eskiz'], 
+        "1. Eskiz": str_notlar['1_eskiz'], "2. Eskiz": str_notlar['2_eskiz'], 
         "1. jüri": j1_str, "2. jüri": j2_str, "3. jüri": j3_str, 
         "Final": str_notlar['final'], "Final ORTALAMA": final_ort, 
         "Bütünleme": but_hucre_degeri, "Büt ORTALAMA": but_ort
@@ -283,8 +283,8 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
         satir = {
             "Sıra": veri["sira"], "Ders Kodu": veri["kod"], "Yürütücü": veri["yurutucu"], 
             "No": no, "Ad Soyad": veri["ad"],
-            "Eskiz 1": str(notlar["1_eskiz"]), "Eskiz 2": str(notlar["2_eskiz"]), 
-            "Jüri 1": str(notlar["1_juri"]), "Jüri 2": str(notlar["2_juri"]), "Jüri 3": str(notlar["3_juri"]), 
+            "1. Eskiz": str(notlar["1_eskiz"]), "2. Eskiz": str(notlar["2_eskiz"]), 
+            "1. Jüri": str(notlar["1_juri"]), "2. Jüri": str(notlar["2_juri"]), "3. Jüri": str(notlar["3_juri"]), 
             "Final": str(notlar["final"]), "Bütünleme": str(gosterilecek_but)
         }
         hedef_liste.append(satir)
@@ -293,7 +293,7 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
         if not arama_metni or arama_metni in tr_lower(veri["ad"]) or arama_metni in str(no):
             gosterilecek_veriler.append(satir)
             
-    sutunlar_listesi = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad", "Eskiz 1", "Eskiz 2", "Jüri 1", "Jüri 2", "Jüri 3", "Final", "Bütünleme"]
+    sutunlar_listesi = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad", "1. Eskiz", "2. Eskiz", "1. Jüri", "2. Jüri", "3. Jüri", "Final", "Bütünleme"]
     if gosterilecek_veriler:
         df_hoca = pd.DataFrame(gosterilecek_veriler)
     else:
@@ -310,8 +310,8 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     )
     
     sutun_haritasi = [
-        ("Eskiz 1", "1_eskiz"), ("Eskiz 2", "2_eskiz"), 
-        ("Jüri 1", "1_juri"), ("Jüri 2", "2_juri"), ("Jüri 3", "3_juri"), 
+        ("1. Eskiz", "1_eskiz"), ("2. Eskiz", "2_eskiz"), 
+        ("1. Jüri", "1_juri"), ("2. Jüri", "2_juri"), ("3. Jüri", "3_juri"), 
         ("Final", "final"), ("Bütünleme", "butunleme")
     ]
     
