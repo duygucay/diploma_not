@@ -7,7 +7,7 @@ from datetime import datetime
 import io
 
 # --- BASİT ŞİFRE KORUMASI ---
-PAROLA = "diploma2026"  # İstediğiniz şifreyi buraya yazabilirsiniz
+PAROLA = "dp2026"  # İstediğiniz şifreyi buraya yazabilirsiniz
 
 if "giris_yapildi" not in st.session_state:
     st.session_state.giris_yapildi = False
@@ -242,7 +242,7 @@ for no, veri in sorted(st.session_state.ogrenciler.items(), key=lambda x: x[1]["
     ana_liste.append({
         "Sıra": veri["sira"], "Ders Kodu": veri["kod"], "Yürütücü": veri["yurutucu"], 
         "No": no, "Ad Soyad": veri["ad"], 
-        "Eskiz 1": str_notlar['1_eskiz'], "Eskiz 2": str_notlar['2_eskiz'], 
+        "1. Eskiz": str_notlar['1_eskiz'], "2. Eskiz": str_notlar['2_eskiz'], 
         "1. jüri": j1_str, "2. jüri": j2_str, "3. jüri": j3_str, 
         "Final": str_notlar['final'], "Final ORTALAMA": final_ort, 
         "Bütünleme": but_hucre_degeri, "Büt ORTALAMA": but_ort
@@ -276,8 +276,8 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
         satir = {
             "Sıra": veri["sira"], "Ders Kodu": veri["kod"], "Yürütücü": veri["yurutucu"], 
             "No": no, "Ad Soyad": veri["ad"],
-            "Eskiz 1": str(notlar["1_eskiz"]), "Eskiz 2": str(notlar["2_eskiz"]), 
-            "Jüri 1": str(notlar["1_juri"]), "Jüri 2": str(notlar["2_juri"]), "Jüri 3": str(notlar["3_juri"]), 
+            "1. Eskiz": str(notlar["1_eskiz"]), "2. Eskiz": str(notlar["2_eskiz"]), 
+            "1. Jüri": str(notlar["1_juri"]), "2. Jüri": str(notlar["2_juri"]), "3. Jüri": str(notlar["3_juri"]), 
             "Final": str(notlar["final"]), "Bütünleme": str(gosterilecek_but)
         }
         hedef_liste.append(satir)
@@ -297,8 +297,8 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     )
     
     sutun_haritasi = [
-        ("Eskiz 1", "1_eskiz"), ("Eskiz 2", "2_eskiz"), 
-        ("Jüri 1", "1_juri"), ("Jüri 2", "2_juri"), ("Jüri 3", "3_juri"), 
+        ("1. Eskiz", "1_eskiz"), ("2. Eskiz", "2_eskiz"), 
+        ("1. Jüri", "1_juri"), ("2. Jüri", "2_juri"), ("3. Jüri", "3_juri"), 
         ("Final", "final"), ("Bütünleme", "butunleme")
     ]
     
