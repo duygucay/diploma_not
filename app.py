@@ -1,14 +1,11 @@
-import streamlit as st
-import pandas as pd
-import json
-import os
-import shutil
-from datetime import datetime
 import io
-
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 
 # --- BASİT ŞİFRE KORUMASI ---
-PAROLA = "dp2026"  # İstediğiniz şifreyi buraya yazabilirsiniz
+PAROLA = "dp2026"
 
 if "giris_yapildi" not in st.session_state:
     st.session_state.giris_yapildi = False
@@ -26,12 +23,10 @@ if not st.session_state.giris_yapildi:
     st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
 
 # --- SAYFA VE ARAYÜZ AYARLARI ---
-st.set_page_config(page_title="2026-2027 Güz Dönemi\nDiploma Projesi Not Sistemi", layout="wide")
+st.set_page_config(page_title="2026-2027 Güz Dönemi - Diploma Projesi Not Sistemi", layout="wide")
 
-# --- DİNAMİK DOSYA YOLU TESPİTİ ---
-CALISMA_KLASORU = os.path.dirname(os.path.abspath(__file__))
-DOSYA_ADI = os.path.join(CALISMA_KLASORU, "notlar_kayit.json")
-YEDEK_KLASOR = os.path.join(CALISMA_KLASORU, "yedekler")
+# --- GOOGLE SHEETS BAĞLANTISI ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 1. GERÇEK ÖĞRENCİ LİSTESİ VE VERİ YAPISI
 ogrenci_ham_verileri = [
@@ -75,9 +70,27 @@ def tr_lower(text):
     if not text: return ""
     return str(text).replace("İ", "i").replace("I", "ı").lower()
 
-# --- VERİ YÜKLEME VE İLKLENDİRME ---
-def verileri_yukle():
+# --- GOOGLE SHEETS İLE VERİ YÜKLEME ---
+def verileri_sheets_oku():
     ogrenciler = {}
+    try:
+        df = conn.read(ttl=0)
+        if not df.empty and "No" in df.columns:
+            for _, row in df.iterrows():
+                no = str(row["No"])
+                ogrenciler[no] = {
+                    "sira": int(row["Sira"]),
+                    "kod": str(row["Ders Kodu"]),
+                    "yurutucu": str(row["Yurutucu"]),
+                    "ad": str(row["Ad Soyad"]),
+                    "hoca1": {k: str(row.get(f"h1_{k}", "")) if pd.notna(row.get(f"h1_{k}")) else "" for k in not_anahtarlari},
+                    "hoca2": {k: str(row.get(f"h2_{k}", "")) if pd.notna(row.get(f"h2_{k}")) else "" for k in not_anahtarlari},
+                    "hoca3": {k: str(row.get(f"h3_{k}", "")) if pd.notna(row.get(f"h3_{k}")) else "" for k in not_anahtarlari}
+                }
+            return ogrenciler
+    except Exception:
+        pass
+
     for idx, (kod, yurutucu, numara, ad) in enumerate(ogrenci_ham_verileri, start=1):
         ogrenciler[numara] = {
             "sira": idx, "kod": kod, "yurutucu": yurutucu, "ad": ad,
@@ -85,44 +98,27 @@ def verileri_yukle():
             "hoca2": {k: "" for k in not_anahtarlari},
             "hoca3": {k: "" for k in not_anahtarlari}
         }
-    if os.path.exists(DOSYA_ADI):
-        try:
-            with open(DOSYA_ADI, "r", encoding="utf-8") as dosya:
-                kayitli_veri = json.load(dosya)
-                for no in kayitli_veri:
-                    if no in ogrenciler:
-                        ogrenciler[no].update(kayitli_veri[no])
-        except Exception:
-            pass
     return ogrenciler
 
+# --- GOOGLE SHEETS'E VERİ YAZMA ---
+def verileri_sheets_kaydet(veri_sozlugu):
+    rows = []
+    for no, v in sorted(veri_sozlugu.items(), key=lambda x: x[1]["sira"]):
+        row = {
+            "Sira": v["sira"], "Ders Kodu": v["kod"], "Yurutucu": v["yurutucu"],
+            "No": str(no), "Ad Soyad": v["ad"]
+        }
+        for k in not_anahtarlari:
+            row[f"h1_{k}"] = str(v["hoca1"][k])
+            row[f"h2_{k}"] = str(v["hoca2"][k])
+            row[f"h3_{k}"] = str(v["hoca3"][k])
+        rows.append(row)
+    
+    df_kayit = pd.DataFrame(rows)
+    conn.update(data=df_kayit)
+
 if 'ogrenciler' not in st.session_state:
-    st.session_state.ogrenciler = verileri_yukle()
-
-# --- GÜVENLİ VE YEDEKLEMELİ KAYIT SİSTEMİ ---
-def verileri_kaydet(veri_sozlugu):
-    try:
-        temp_dosya = DOSYA_ADI + ".tmp"
-        with open(temp_dosya, "w", encoding="utf-8") as dosya:
-            json.dump(veri_sozlugu, dosya, ensure_ascii=False, indent=4)
-        
-        if os.path.exists(DOSYA_ADI):
-            os.replace(temp_dosya, DOSYA_ADI)
-        else:
-            os.rename(temp_dosya, DOSYA_ADI)
-
-        if not os.path.exists(YEDEK_KLASOR):
-            os.makedirs(YEDEK_KLASOR, exist_ok=True)
-            
-        zaman_damgasi = datetime.now().strftime("%Y%m%d_%H%M%S")
-        yedek_adi = os.path.join(YEDEK_KLASOR, f"notlar_yedek_{zaman_damgasi}.json")
-        shutil.copy2(DOSYA_ADI, yedek_adi)
-        
-        yedekler = sorted([os.path.join(YEDEK_KLASOR, f) for f in os.listdir(YEDEK_KLASOR)])
-        if len(yedekler) > 40:
-            os.remove(yedekler[0])
-    except Exception as e:
-        st.error(f"Kayıt veya yedekleme hatası: {e}")
+    st.session_state.ogrenciler = verileri_sheets_oku()
 
 # --- STRICT 0-100 VE 'G' DOĞRULAMA FONKSİYONU ---
 def guvenli_float(val):
@@ -138,7 +134,7 @@ def guvenli_float(val):
             return num_round
         else:
             return None
-    except:
+    except Exception:
         return None
 
 # --- HESAPLAMA MANTIĞI ---
@@ -168,7 +164,7 @@ def ana_sayfa_ortalama_hesapla(h1_notlari, h2_notlari, h3_notlari):
                 str_notlar[anahtar] = ort
                 sayisal_notlar_dict[anahtar] = ort
 
-    # Jüri Düşme
+    # Jüri Düşme Hesabı
     j_vals = [("1", str_notlar["1_juri"]), ("2", str_notlar["2_juri"]), ("3", str_notlar["3_juri"])]
     sayisal_juriler = [j for j in j_vals if j[1] != "G" and j[1] != ""]
     
@@ -261,15 +257,15 @@ with tab_ana:
         st.write("")
     with col2:
         st.info("💡 Tablodaki başlıklara tıklayarak verileri sıralayabilirsiniz.")
-        
-    st.dataframe(df_ana, use_container_width=True, hide_index=True)
 
-# ANLIK SÜZMELİ VE ANINDA KAYITLI HOCA SEKMESİ
+    sabit_yukseklik = (len(df_ana) + 1) * 35 + 20
+    st.dataframe(df_ana, use_container_width=True, hide_index=True, height=sabit_yukseklik)
+
+# ANLIK SÜZMELİ VE ANINDA GOOGLE SHEETS KAYITLI HOCA SEKMESİ
 def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     st.markdown(f"### 🔍 {hoca_adi} Not Giriş Ekranı")
-    st.caption("⚡ Sadece **0-100** arası notlar veya **'G'** / **'g'** harfi kabul edilir. Notlar anında kaydedilir.")
+    st.caption("⚡ Sadece **0-100** arası notlar veya **'G'** / **'g'** harfi kabul edilir. Notlar anında Google E-Tablonuza kaydedilir.")
     
-    # Arama girdisi (Her karakterde otomatik çalışır)
     arama_raw = st.text_input("Öğrenci Ara (İsim veya No):", key=f"arama_{hoca_kodu}")
     arama_metni = tr_lower(arama_raw)
     
@@ -289,7 +285,6 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
         }
         hedef_liste.append(satir)
         
-        # Türkçe uyumlu anlık filtreleme
         if not arama_metni or arama_metni in tr_lower(veri["ad"]) or arama_metni in str(no):
             gosterilecek_veriler.append(satir)
             
@@ -300,13 +295,16 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
         df_hoca = pd.DataFrame(columns=sutunlar_listesi)
         
     kilitli_sutunlar = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad"]
-    
+
+    tablo_yuksekligi = (len(df_hoca) + 1) * 35 + 20
+
     duzenlenen_df = st.data_editor(
         df_hoca,
         use_container_width=True,
         hide_index=True,
         disabled=kilitli_sutunlar,
-        key=f"editor_{hoca_kodu}"
+        key=f"editor_{hoca_kodu}",
+        height=tablo_yuksekligi
     )
     
     sutun_haritasi = [
@@ -342,9 +340,8 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     if hata_mesaji:
         st.error(hata_mesaji)
     elif degisiklik_var_mi:
-        verileri_kaydet(st.session_state.ogrenciler)
-        st.toast("⚡ Değişiklikler anında otomatik kaydedildi!", icon="✅")
-        st.rerun()
+        verileri_sheets_kaydet(st.session_state.ogrenciler)
+        st.toast("⚡ Değişiklikler Google Sheets'e anında kaydedildi!", icon="✅")
 
 with tab_hoca1: hoca_sekmesi_olustur("hoca1", "Beste AYTİN", h1_liste)
 with tab_hoca2: hoca_sekmesi_olustur("hoca2", "Duygu ÇAY", h2_liste)
