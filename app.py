@@ -514,8 +514,19 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
           ),
       )
 
+    # GRİ SATIR VURGULAMA FONKSİYONU
+    def highlight_g_rows(row):
+      is_g = any(str(val).strip().upper() == "G" for val in row.values)
+      if is_g:
+        return [
+            "background-color: #d3d3d3; color: #333333; font-weight: bold"
+        ] * len(row)
+      return [""] * len(row)
+
+    styled_barem_df = df_barem.style.apply(highlight_g_rows, axis=1)
+
     duzenlenen_barem_df = st.data_editor(
-        df_barem,
+        styled_barem_df,
         use_container_width=True,
         hide_index=True,
         disabled=disabled_cols,
@@ -631,7 +642,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
                   ][k["ad"]] = "G"
                 is_g_student = True
               elif s_val == "-":
-                # '-' seçeneğini diğer tüm hocaların bu kriterine senkronize et
                 for hk in ["hoca1", "hoca2", "hoca3"]:
                   st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hk][
                       sinav_key
@@ -911,7 +921,6 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
       eski_deger = st.session_state.ogrenciler[ogr_no][hoca_kodu][k]
       if islenmis_deger != eski_deger:
         if islenmis_deger == "G":
-          # "G" girildiyse tüm hocalarda "G" yap
           st.session_state.ogrenciler[ogr_no]["hoca1"][k] = "G"
           st.session_state.ogrenciler[ogr_no]["hoca2"][k] = "G"
           st.session_state.ogrenciler[ogr_no]["hoca3"][k] = "G"
