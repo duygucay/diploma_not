@@ -1,30 +1,9 @@
-
 import io
 import json
 from datetime import datetime
 import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-
-
-# --- BASİT ŞİFRE KORUMASI ---
-PAROLA = "dp2026"
-
-if "giris_yapildi" not in st.session_state:
-    st.session_state.giris_yapildi = False
-
-if not st.session_state.giris_yapildi:
-    st.title("🔒 Diploma Projesi Not - Giriş Paneli")
-    girilen_sifre = st.text_input("Lütfen erişim şifresini giriniz:", type="password")
-    if st.button("Giriş Yap"):
-        if girilen_sifre == PAROLA:
-            st.session_state.giris_yapildi = True
-            st.success("Giriş başarılı!")
-            st.rerun()
-        else:
-            st.error("Hatalı şifre!")
-    st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
-
 
 # --- SAYFA VE ARAYÜZ AYARLARI ---
 st.set_page_config(
