@@ -434,9 +434,21 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
     }
     satir_toplam = 0
     for k in guncel_kriterler:
-      val = int(round(float(b_detay.get(k["ad"], 0))))
-      row[f"{k['ad']} ({k['max']}p)"] = val
-      satir_toplam += val
+      b_val = b_detay.get(k["ad"], "-")
+      if b_val is None or str(b_val).strip() in ["", "-", "None", "nan"]:
+        val_display = "-"
+        val_puan = 0
+      else:
+        try:
+          val_puan = int(round(float(str(b_val).replace(",", "."))))
+          val_display = str(val_puan)
+        except Exception:
+          val_display = "-"
+          val_puan = 0
+
+      row[f"{k['ad']} ({k['max']}p)"] = val_display
+      satir_toplam += val_puan
+
     row["TOPLAM"] = satir_toplam
     barem_rows.append(row)
 
@@ -447,12 +459,12 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
     column_config_barem = {}
     for k in guncel_kriterler:
       col_name = f"{k['ad']} ({k['max']}p)"
-      column_config_barem[col_name] = st.column_config.NumberColumn(
+      column_config_barem[col_name] = st.column_config.TextColumn(
           label=col_name,
-          min_value=0,
-          max_value=1000,
-          step=1,
-          help=f"Bu kriter için maksimum izin verilen limit: {k['max']} puan",
+          help=(
+              f"Bu kriter için maksimum limit: {k['max']} puan. '-'"
+              " girebilirsiniz."
+          ),
       )
 
     duzenlenen_barem_df = st.data_editor(
@@ -483,26 +495,34 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
       else:
         hatali_girisler = []
 
-        # Kontrol: Limit aşımı var mı?
+        # Kontrol: Limit aşımı var mı veya geçersiz bir metin girilmiş mi?
         for _, row in duzenlenen_barem_df.iterrows():
           ogr_ad = row["Ad Soyad"]
           for k in guncel_kriterler:
             col_name = f"{k['ad']} ({k['max']}p)"
-            val = row.get(col_name, 0)
-            try:
-              val_int = int(round(float(val))) if pd.notna(val) else 0
-            except Exception:
-              val_int = 0
+            val = row.get(col_name, "-")
+            s_val = str(val).strip() if pd.notna(val) else "-"
 
-            if val_int > k["max"]:
+            if s_val in ["", "-", "NONE", "NULL"]:
+              continue
+
+            try:
+              val_num = float(s_val.replace(",", "."))
+              val_int = round(val_num)
+              if val_int > k["max"]:
+                hatali_girisler.append(
+                    f"• **{ogr_ad}** — **{k['ad']}** kriterine `{val_int}` puan"
+                    f" yazamazsınız! (Maksimum limit: **{k['max']}** puan)"
+                )
+              elif val_int < 0:
+                hatali_girisler.append(
+                    f"• **{ogr_ad}** — **{k['ad']}** kriteri: Negatif puan"
+                    f" (`{val_int}`) girilemez!"
+                )
+            except Exception:
               hatali_girisler.append(
-                  f"• **{ogr_ad}** — **{k['ad']}** kriterine `{val_int}` puan"
-                  f" yazamazsınız! (Maksimum limit: **{k['max']}** puan)"
-              )
-            elif val_int < 0:
-              hatali_girisler.append(
-                  f"• **{ogr_ad}** — **{k['ad']}** kriteri: Negatif puan"
-                  f" (`{val_int}`) girilemez!"
+                  f"• **{ogr_ad}** — **{k['ad']}** kriterine girilen `{s_val}`"
+                  " değeri geçersizdir! (Sadece sayı veya `-` girilebilir)"
               )
 
         if hatali_girisler:
@@ -537,13 +557,19 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
 
             for k in guncel_kriterler:
               col_name = f"{k['ad']} ({k['max']}p)"
-              val = row.get(col_name, 0)
-              val_int = int(round(float(val))) if pd.notna(val) else 0
+              val = row.get(col_name, "-")
+              s_val = str(val).strip() if pd.notna(val) else "-"
 
-              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
-                  sinav_key
-              ][k["ad"]] = val_int
-              calc_toplam += val_int
+              if s_val in ["", "-", "NONE", "NULL"]:
+                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
+                    hoca_kodu
+                ][sinav_key][k["ad"]] = "-"
+              else:
+                val_int = round(float(s_val.replace(",", ".")))
+                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
+                    hoca_kodu
+                ][sinav_key][k["ad"]] = val_int
+                calc_toplam += val_int
 
             st.session_state.ogrenciler[ogr_no][hoca_kodu][
                 sinav_key
