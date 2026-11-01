@@ -1,9 +1,11 @@
+
 import io
 import json
 from datetime import datetime
 import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
+
 
 # --- BASİT ŞİFRE KORUMASI ---
 PAROLA = "dp2026"
@@ -22,6 +24,7 @@ if not st.session_state.giris_yapildi:
         else:
             st.error("Hatalı şifre!")
     st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
+
 
 # --- SAYFA VE ARAYÜZ AYARLARI ---
 st.set_page_config(
@@ -451,23 +454,27 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         "Ad Soyad": v["ad"],
     }
     satir_toplam = 0
+    has_g = False
     for k in guncel_kriterler:
       b_val = b_detay.get(k["ad"], "-")
-      if b_val is None or str(b_val).strip() in ["", "-", "None", "nan"]:
+      s_bval = str(b_val).strip().upper() if b_val is not None else "-"
+
+      if s_bval == "G":
+        val_display = "G"
+        has_g = True
+      elif b_val is None or s_bval in ["", "-", "NONE", "NAN"]:
         val_display = "-"
-        val_puan = 0
       else:
         try:
           val_puan = int(round(float(str(b_val).replace(",", "."))))
           val_display = str(val_puan)
+          satir_toplam += val_puan
         except Exception:
           val_display = "-"
-          val_puan = 0
 
       row[f"{k['ad']} ({k['max']}p)"] = val_display
-      satir_toplam += val_puan
 
-    row["TOPLAM"] = satir_toplam
+    row["TOPLAM"] = "G" if has_g else satir_toplam
     barem_rows.append(row)
 
   if barem_rows and guncel_kriterler:
@@ -480,8 +487,8 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
       column_config_barem[col_name] = st.column_config.TextColumn(
           label=col_name,
           help=(
-              f"Bu kriter için maksimum limit: {k['max']} puan. '-'"
-              " girebilirsiniz."
+              f"Bu kriter için maksimum limit: {k['max']} puan. Sayı, 'G' veya"
+              " '-' girebilirsiniz."
           ),
       )
 
@@ -519,9 +526,9 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
           for k in guncel_kriterler:
             col_name = f"{k['ad']} ({k['max']}p)"
             val = row.get(col_name, "-")
-            s_val = str(val).strip() if pd.notna(val) else "-"
+            s_val = str(val).strip().upper() if pd.notna(val) else "-"
 
-            if s_val in ["", "-", "NONE", "NULL"]:
+            if s_val in ["", "-", "NONE", "NULL", "G"]:
               continue
 
             try:
@@ -540,7 +547,7 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
             except Exception:
               hatali_girisler.append(
                   f"• **{ogr_ad}** — **{k['ad']}** kriterine girilen `{s_val}`"
-                  " değeri geçersizdir! (Sadece sayı veya `-` girilebilir)"
+                  " değeri geçersizdir! (Sadece sayı, `G` veya `-` girilebilir)"
               )
 
         if hatali_girisler:
@@ -553,6 +560,7 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
           for _, row in duzenlenen_barem_df.iterrows():
             ogr_no = str(row["No"])
             calc_toplam = 0
+            is_g_student = False
 
             if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
               st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
@@ -577,8 +585,14 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
               col_name = f"{k['ad']} ({k['max']}p)"
               val = row.get(col_name, "-")
               s_val = str(val).strip() if pd.notna(val) else "-"
+              s_val_upper = s_val.upper()
 
-              if s_val in ["", "-", "NONE", "NULL"]:
+              if s_val_upper == "G":
+                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
+                    hoca_kodu
+                ][sinav_key][k["ad"]] = "G"
+                is_g_student = True
+              elif s_val in ["", "-", "NONE", "NULL"]:
                 st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
                     hoca_kodu
                 ][sinav_key][k["ad"]] = "-"
@@ -589,9 +603,10 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
                 ][sinav_key][k["ad"]] = val_int
                 calc_toplam += val_int
 
+            final_sınav_notu = "G" if is_g_student else calc_toplam
             st.session_state.ogrenciler[ogr_no][hoca_kodu][
                 sinav_key
-            ] = calc_toplam
+            ] = final_sınav_notu
 
           verileri_sheets_kaydet(
               st.session_state.ogrenciler, st.session_state.baremler
