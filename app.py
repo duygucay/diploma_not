@@ -310,39 +310,15 @@ def excel_olustur(df_ana, df_h1, df_h2, df_h3):
 # --- STREAMLIT AÇILIR BAREM MODAL PENCERESİ ---
 @st.dialog("📋 Detaylı Barem ve Not Giriş Ekranı", width="large")
 def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
-  # Dialog içi Yeşil ve Küçük Buton CSS Tanımlaması
-  st.markdown(
-      """
-        <style>
-        div[data-testid="stDialog"] button[kind="primary"] {
-            background-color: #27ae60 !important;
-            color: white !important;
-            border-color: #27ae60 !important;
-            padding: 4px 16px !important;
-            font-weight: bold !important;
-        }
-        div[data-testid="stDialog"] button[kind="primary"]:hover {
-            background-color: #219150 !important;
-            border-color: #219150 !important;
-        }
-        </style>
-    """,
-      unsafe_allow_html=True,
-  )
-
   sinav_adi = sinav_etiketleri[sinav_key]
   st.markdown(f"#### 👤 {hoca_adi} — 📝 **{sinav_adi}** Sınav Baremi")
 
   if sinav_key not in st.session_state.baremler:
     st.session_state.baremler[sinav_key] = []
 
-  # ÜST KISIMDAKİ KÜÇÜK VE YEŞİL KAYDET BUTONU
-  top_action = st.container()
-
   kriter_listesi = st.session_state.baremler[sinav_key]
   is_expanded = not bool(kriter_listesi)
 
-  # BAREM KRİTERLERİ DÜZENLEME BÖLÜMÜ
   with st.expander(
       "⚙️ Barem Kriterlerini Tanımla / Düzenle (Tıklayarak Aç/Kapat)",
       expanded=is_expanded,
@@ -396,14 +372,16 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
   if mevcut_toplam > 100:
     st.error(
         f"⚠️ **Barem Toplamı 100'ü Aşıyor!** (Mevcut: `{mevcut_toplam}` / 100)."
-        " Lütfen puanları düzenleyin."
+        " Lütfen kriter puanlarını düzenleyin."
     )
   else:
     st.info(f"💡 **Mevcut Barem Toplamı:** `{mevcut_toplam} / 100` puan.")
 
   st.markdown("##### 📝 Öğrenci Barem Notları Girişi")
 
-  # BAREM PENCERESİ ÖĞRENCİ ARAMA KUTUSU
+  # --- BAREM MESAJ KONTEYNERİ (Arama kutusunun ÜSTÜNDE) ---
+  barem_msg_container = st.container()
+
   arama_barem_raw = st.text_input(
       "🔍 Öğrenci Ara (İsim veya No):",
       key=f"arama_barem_{hoca_kodu}_{sinav_key}",
@@ -414,7 +392,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
   for no, v in sorted(
       st.session_state.ogrenciler.items(), key=lambda x: x[1]["sira"]
   ):
-    # Arama filtresi
     if (
         arama_barem_metni
         and (arama_barem_metni not in tr_lower(v["ad"]))
@@ -444,75 +421,129 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
     df_barem = pd.DataFrame(barem_rows)
     disabled_cols = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad", "TOPLAM"]
 
+    column_config_barem = {}
+    for k in guncel_kriterler:
+      col_name = f"{k['ad']} ({k['max']}p)"
+      column_config_barem[col_name] = st.column_config.NumberColumn(
+          label=col_name,
+          min_value=0,
+          max_value=1000,
+          step=1,
+          help=f"Bu kriter için maksimum izin verilen limit: {k['max']} puan",
+      )
+
     duzenlenen_barem_df = st.data_editor(
         df_barem,
         use_container_width=True,
         hide_index=True,
         disabled=disabled_cols,
+        column_config=column_config_barem,
         key=f"editor_barem_notlar_{hoca_kodu}_{sinav_key}",
         height=350,
     )
 
-    with top_action:
-      c_save, _ = st.columns([1, 4])
-      with c_save:
-        if st.button(
-            "💾 Kaydet",
-            type="primary",
-            use_container_width=False,
-            key=f"btn_save_{sinav_key}",
-        ):
-          if mevcut_toplam > 100:
-            st.error("Barem toplamı 100 puanı aştığı için kaydedilemez!")
-          else:
-            for _, row in duzenlenen_barem_df.iterrows():
-              ogr_no = str(row["No"])
-              calc_toplam = 0
+    # --- OTOMATİK KONTROL VE KAYDETME (Anında üstte mesaj gösterir) ---
+    if mevcut_toplam > 100:
+      barem_msg_container.error(
+          f"❌ Barem kriter toplamı ({mevcut_toplam}) 100 puanı aştığı için"
+          " kaydedilemez!"
+      )
+    else:
+      hatali_girisler = []
+      degisiklik_var_mi = False
 
-              if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
-                st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
-              if (
+      # 1. Kontrol: Limit aşımı var mı?
+      for _, row in duzenlenen_barem_df.iterrows():
+        ogr_ad = row["Ad Soyad"]
+        for k in guncel_kriterler:
+          col_name = f"{k['ad']} ({k['max']}p)"
+          val = row.get(col_name, 0)
+          try:
+            val_int = int(round(float(val))) if pd.notna(val) else 0
+          except Exception:
+            val_int = 0
+
+          if val_int > k["max"]:
+            hatali_girisler.append(
+                f"• **{ogr_ad}** — **{k['ad']}** kriterine `{val_int}` puan"
+                f" yazamazsınız! (Maksimum limit: **{k['max']}** puan)"
+            )
+          elif val_int < 0:
+            hatali_girisler.append(
+                f"• **{ogr_ad}** — **{k['ad']}** kriteri: Negatif puan (`{val_int}`) girilemez!"
+            )
+
+      # 2. Hata varsa ARAMA KUTUSUNUN ÜSTÜNE mesaj bas ve kaydetme
+      if hatali_girisler:
+        barem_msg_container.error(
+            "⛔ **HATALI NOT GİRİŞİ! Kayıt işlemi yapılmadı:**\n\n"
+            + "\n".join(hatali_girisler)
+        )
+      else:
+        # Hata yoksa güncellemeleri işle ve kaydet
+        for _, row in duzenlenen_barem_df.iterrows():
+          ogr_no = str(row["No"])
+          calc_toplam = 0
+
+          if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
+            st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
+          if (
+              hoca_kodu
+              not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"]
+          ):
+            st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
+                hoca_kodu
+            ] = {}
+          if (
+              sinav_key
+              not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
                   hoca_kodu
-                  not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"]
-              ):
+              ]
+          ):
+            st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
+                sinav_key
+            ] = {}
+
+          for k in guncel_kriterler:
+            col_name = f"{k['ad']} ({k['max']}p)"
+            val = row.get(col_name, 0)
+            val_int = int(round(float(val))) if pd.notna(val) else 0
+
+            eski_val = (
                 st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
                     hoca_kodu
-                ] = {}
-              if (
-                  sinav_key
-                  not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                      hoca_kodu
-                  ]
-              ):
-                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                    hoca_kodu
-                ][sinav_key] = {}
-
-              for k in guncel_kriterler:
-                col_name = f"{k['ad']} ({k['max']}p)"
-                val = row.get(col_name, 0)
-                try:
-                  val_int = int(round(float(val)))
-                except Exception:
-                  val_int = 0
-
-                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                    hoca_kodu
-                ][sinav_key][k["ad"]] = val_int
-                calc_toplam += val_int
-
-              st.session_state.ogrenciler[ogr_no][hoca_kodu][
-                  sinav_key
-              ] = calc_toplam
-
-            verileri_sheets_kaydet(
-                st.session_state.ogrenciler, st.session_state.baremler
+                ]
+                .get(sinav_key, {})
+                .get(k["ad"], 0)
             )
-            st.toast(
-                f"✅ {sinav_adi} barem notları başarıyla kaydedildi!", icon="⚡"
-            )
-            st.session_state.aktif_barem = None
-            st.rerun()
+            if val_int != eski_val:
+              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
+                  sinav_key
+              ][k["ad"]] = val_int
+              degisiklik_var_mi = True
+            else:
+              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
+                  sinav_key
+              ][k["ad"]] = val_int
+
+            calc_toplam += val_int
+
+          if (
+              st.session_state.ogrenciler[ogr_no][hoca_kodu][sinav_key]
+              != calc_toplam
+          ):
+            st.session_state.ogrenciler[ogr_no][hoca_kodu][
+                sinav_key
+            ] = calc_toplam
+            degisiklik_var_mi = True
+
+        if degisiklik_var_mi:
+          verileri_sheets_kaydet(
+              st.session_state.ogrenciler, st.session_state.baremler
+          )
+          st.toast(
+              f"⚡ {sinav_adi} barem notları otomatik kaydedildi!", icon="✅"
+          )
 
   elif not guncel_kriterler:
     st.warning(
@@ -627,10 +658,16 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
       " Notlar anında Google E-Tablonuza kaydedilir."
   )
 
+  # --- HOCA SAYFASI MESAJ KONTEYNERİ (Arama kutusunun ÜSTÜNDE) ---
+  hoca_msg_container = st.container()
+
   arama_raw = st.text_input(
       "Öğrenci Ara (İsim veya No):", key=f"arama_{hoca_kodu}"
   )
   arama_metni = tr_lower(arama_raw)
+
+  if arama_raw:
+    st.session_state.aktif_barem = None
 
   gosterilecek_veriler = []
   for no, veri in sorted(
@@ -692,12 +729,18 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
   kilitli_sutunlar = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad"]
   tablo_yuksekligi = (len(df_hoca) + 1) * 35 + 20
 
+  editor_key = f"editor_{hoca_kodu}"
+  if editor_key in st.session_state and st.session_state[editor_key].get(
+      "edited_rows"
+  ):
+    st.session_state.aktif_barem = None
+
   duzenlenen_df = st.data_editor(
       df_hoca,
       use_container_width=True,
       hide_index=True,
       disabled=kilitli_sutunlar,
-      key=f"editor_{hoca_kodu}",
+      key=editor_key,
       height=tablo_yuksekligi,
   )
 
@@ -739,8 +782,9 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     if hata_mesaji:
       break
 
+  # Hata mesajını ARAMA KUTUSUNUN ÜSTÜNDEKİ konteynere basar
   if hata_mesaji:
-    st.error(hata_mesaji)
+    hoca_msg_container.error(hata_mesaji)
   elif degisiklik_var_mi:
     verileri_sheets_kaydet(
         st.session_state.ogrenciler, st.session_state.baremler
