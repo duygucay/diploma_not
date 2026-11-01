@@ -310,6 +310,26 @@ def excel_olustur(df_ana, df_h1, df_h2, df_h3):
 # --- STREAMLIT AÇILIR BAREM MODAL PENCERESİ ---
 @st.dialog("📋 Detaylı Barem ve Not Giriş Ekranı", width="large")
 def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
+  st.markdown(
+      """
+        <style>
+        div[data-testid="stDialog"] button[kind="primary"] {
+            background-color: #27ae60 !important;
+            color: white !important;
+            border-color: #27ae60 !important;
+            padding: 6px 20px !important;
+            font-weight: bold !important;
+            font-size: 15px !important;
+        }
+        div[data-testid="stDialog"] button[kind="primary"]:hover {
+            background-color: #219150 !important;
+            border-color: #219150 !important;
+        }
+        </style>
+    """,
+      unsafe_allow_html=True,
+  )
+
   sinav_adi = sinav_etiketleri[sinav_key]
   st.markdown(f"#### 👤 {hoca_adi} — 📝 **{sinav_adi}** Sınav Baremi")
 
@@ -369,6 +389,9 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
   guncel_kriterler = st.session_state.baremler[sinav_key]
   mevcut_toplam = sum(int(k["max"]) for k in guncel_kriterler)
 
+  # --- MEVCUT BAREM TOPLAMI SATIRININ ÜZERİNDEKİ YEŞİL KAYDET BUTONU KONTEYNERİ ---
+  top_save_container = st.container()
+
   if mevcut_toplam > 100:
     st.error(
         f"⚠️ **Barem Toplamı 100'ü Aşıyor!** (Mevcut: `{mevcut_toplam}` / 100)."
@@ -379,7 +402,7 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
 
   st.markdown("##### 📝 Öğrenci Barem Notları Girişi")
 
-  # --- BAREM MESAJ KONTEYNERİ (Arama kutusunun ÜSTÜNDE) ---
+  # --- BAREM HATA MESAJI KONTEYNERİ (Arama kutusunun ÜSTÜNDE) ---
   barem_msg_container = st.container()
 
   arama_barem_raw = st.text_input(
@@ -442,108 +465,99 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         height=350,
     )
 
-    # --- OTOMATİK KONTROL VE KAYDETME (Anında üstte mesaj gösterir) ---
-    if mevcut_toplam > 100:
-      barem_msg_container.error(
-          f"❌ Barem kriter toplamı ({mevcut_toplam}) 100 puanı aştığı için"
-          " kaydedilemez!"
+    # --- YEŞİL KAYDET BUTONU YERLEŞTİRME VE KAYDETME MANTIĞI ---
+    with top_save_container:
+      kaydet_tiklandi = st.button(
+          "💾 Barem Notlarını Kaydet ve Hoca Sayfasına Aktar",
+          type="primary",
+          use_container_width=True,
+          key=f"btn_barem_save_top_{sinav_key}",
       )
-    else:
-      hatali_girisler = []
-      degisiklik_var_mi = False
 
-      # 1. Kontrol: Limit aşımı var mı?
-      for _, row in duzenlenen_barem_df.iterrows():
-        ogr_ad = row["Ad Soyad"]
-        for k in guncel_kriterler:
-          col_name = f"{k['ad']} ({k['max']}p)"
-          val = row.get(col_name, 0)
-          try:
-            val_int = int(round(float(val))) if pd.notna(val) else 0
-          except Exception:
-            val_int = 0
-
-          if val_int > k["max"]:
-            hatali_girisler.append(
-                f"• **{ogr_ad}** — **{k['ad']}** kriterine `{val_int}` puan"
-                f" yazamazsınız! (Maksimum limit: **{k['max']}** puan)"
-            )
-          elif val_int < 0:
-            hatali_girisler.append(
-                f"• **{ogr_ad}** — **{k['ad']}** kriteri: Negatif puan (`{val_int}`) girilemez!"
-            )
-
-      # 2. Hata varsa ARAMA KUTUSUNUN ÜSTÜNE mesaj bas ve kaydetme
-      if hatali_girisler:
+    if kaydet_tiklandi:
+      if mevcut_toplam > 100:
         barem_msg_container.error(
-            "⛔ **HATALI NOT GİRİŞİ! Kayıt işlemi yapılmadı:**\n\n"
-            + "\n".join(hatali_girisler)
+            f"❌ Barem kriter toplamı ({mevcut_toplam}) 100 puanı aştığı için"
+            " kaydedilemez!"
         )
       else:
-        # Hata yoksa güncellemeleri işle ve kaydet
+        hatali_girisler = []
+
+        # Kontrol: Limit aşımı var mı?
         for _, row in duzenlenen_barem_df.iterrows():
-          ogr_no = str(row["No"])
-          calc_toplam = 0
-
-          if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
-            st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
-          if (
-              hoca_kodu
-              not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"]
-          ):
-            st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                hoca_kodu
-            ] = {}
-          if (
-              sinav_key
-              not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                  hoca_kodu
-              ]
-          ):
-            st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
-                sinav_key
-            ] = {}
-
+          ogr_ad = row["Ad Soyad"]
           for k in guncel_kriterler:
             col_name = f"{k['ad']} ({k['max']}p)"
             val = row.get(col_name, 0)
-            val_int = int(round(float(val))) if pd.notna(val) else 0
+            try:
+              val_int = int(round(float(val))) if pd.notna(val) else 0
+            except Exception:
+              val_int = 0
 
-            eski_val = (
-                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
+            if val_int > k["max"]:
+              hatali_girisler.append(
+                  f"• **{ogr_ad}** — **{k['ad']}** kriterine `{val_int}` puan"
+                  f" yazamazsınız! (Maksimum limit: **{k['max']}** puan)"
+              )
+            elif val_int < 0:
+              hatali_girisler.append(
+                  f"• **{ogr_ad}** — **{k['ad']}** kriteri: Negatif puan"
+                  f" (`{val_int}`) girilemez!"
+              )
+
+        if hatali_girisler:
+          barem_msg_container.error(
+              "⛔ **HATALI NOT GİRİŞİ! Kayıt işlemi yapılmadı:**\n\n"
+              + "\n".join(hatali_girisler)
+          )
+        else:
+          # Hata yoksa Hoca Sayfası ve Google Sheets'e kaydet
+          for _, row in duzenlenen_barem_df.iterrows():
+            ogr_no = str(row["No"])
+            calc_toplam = 0
+
+            if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
+              st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
+            if (
+                hoca_kodu
+                not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"]
+            ):
+              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
+                  hoca_kodu
+              ] = {}
+            if (
+                sinav_key
+                not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
                     hoca_kodu
                 ]
-                .get(sinav_key, {})
-                .get(k["ad"], 0)
-            )
-            if val_int != eski_val:
+            ):
+              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
+                  sinav_key
+              ] = {}
+
+            for k in guncel_kriterler:
+              col_name = f"{k['ad']} ({k['max']}p)"
+              val = row.get(col_name, 0)
+              val_int = int(round(float(val))) if pd.notna(val) else 0
+
               st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
                   sinav_key
               ][k["ad"]] = val_int
-              degisiklik_var_mi = True
-            else:
-              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
-                  sinav_key
-              ][k["ad"]] = val_int
+              calc_toplam += val_int
 
-            calc_toplam += val_int
-
-          if (
-              st.session_state.ogrenciler[ogr_no][hoca_kodu][sinav_key]
-              != calc_toplam
-          ):
             st.session_state.ogrenciler[ogr_no][hoca_kodu][
                 sinav_key
             ] = calc_toplam
-            degisiklik_var_mi = True
 
-        if degisiklik_var_mi:
           verileri_sheets_kaydet(
               st.session_state.ogrenciler, st.session_state.baremler
           )
           st.toast(
-              f"⚡ {sinav_adi} barem notları otomatik kaydedildi!", icon="✅"
+              f"✅ {sinav_adi} barem notları başarıyla hoca sayfasına aktarıldı!",
+              icon="⚡",
           )
+          st.session_state.aktif_barem = None
+          st.rerun()
 
   elif not guncel_kriterler:
     st.warning(
