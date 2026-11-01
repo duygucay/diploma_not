@@ -75,6 +75,20 @@ def tr_lower(text):
   return str(text).replace("İ", "i").replace("I", "ı").lower()
 
 
+def g_senkronize_et(ogrenciler_dict):
+  """Eğer herhangi bir hocada 'G' notu varsa tüm hoca sayfalarında o sınav için 'G' yapar."""
+  for no, v in ogrenciler_dict.items():
+    for k in not_anahtarlari:
+      if (
+          str(v["hoca1"].get(k, "")).strip().upper() == "G"
+          or str(v["hoca2"].get(k, "")).strip().upper() == "G"
+          or str(v["hoca3"].get(k, "")).strip().upper() == "G"
+      ):
+        v["hoca1"][k] = "G"
+        v["hoca2"][k] = "G"
+        v["hoca3"][k] = "G"
+
+
 # --- GOOGLE SHEETS İLE VERİ VE BAREM OKUMA ---
 def verileri_sheets_oku():
   ogrenciler = {}
@@ -120,6 +134,8 @@ def verileri_sheets_oku():
             "barem_detaylari": b_detay,
         }
 
+      g_senkronize_et(ogrenciler)
+
       baremler_str = (
           str(df.iloc[0].get("global_baremler", "{}"))
           if "global_baremler" in df.columns
@@ -160,6 +176,7 @@ def verileri_sheets_oku():
 
 # --- GOOGLE SHEETS'E VERİ VE BAREM KAYDETME ---
 def verileri_sheets_kaydet(veri_sozlugu, barem_sozlugu):
+  g_senkronize_et(veri_sozlugu)
   rows = []
   global_baremlari_json = json.dumps(barem_sozlugu, ensure_ascii=False)
 
@@ -189,6 +206,8 @@ if "ogrenciler" not in st.session_state or "baremler" not in st.session_state:
   st.session_state.ogrenciler, st.session_state.baremler = (
       verileri_sheets_oku()
   )
+
+g_senkronize_et(st.session_state.ogrenciler)
 
 if "aktif_barem" not in st.session_state:
   st.session_state.aktif_barem = None
@@ -409,15 +428,9 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
   )
   arama_barem_metni = tr_lower(arama_barem_raw)
 
-  # Editor canlı yapılan son hücre değişikliklerini okur
-  editor_key = f"editor_barem_notlar_{hoca_kodu}_{sinav_key}"
-  edited_changes = {}
-  if editor_key in st.session_state:
-    edited_changes = st.session_state[editor_key].get("edited_rows", {})
-
   barem_rows = []
-  for idx_row, (no, v) in enumerate(
-      sorted(st.session_state.ogrenciler.items(), key=lambda x: x[1]["sira"])
+  for no, v in sorted(
+      st.session_state.ogrenciler.items(), key=lambda x: x[1]["sira"]
   ):
     if (
         arama_barem_metni
@@ -429,11 +442,12 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
     b_detay = (
         v.get("barem_detaylari", {}).get(hoca_kodu, {}).get(sinav_key, {})
     )
-    mevcut_sınav_notu = (
-        str(v.get(hoca_kodu, {}).get(sinav_key, "")).strip().upper()
-    )
 
-    row_edits = edited_changes.get(idx_row, {})
+    # Herhangi bir hocada "G" girilmiş mi kontrol et
+    has_g = any(
+        str(v.get(hk, {}).get(sinav_key, "")).strip().upper() == "G"
+        for hk in ["hoca1", "hoca2", "hoca3"]
+    )
 
     row = {
         "Sıra": v["sira"],
@@ -443,17 +457,24 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         "Ad Soyad": v["ad"],
     }
     satir_toplam = 0
-    has_g = (
-        mevcut_sınav_notu == "G"
-        or str(row_edits.get("TOPLAM", "")).strip().upper() == "G"
-    )
 
     for k in guncel_kriterler:
       col_name = f"{k['ad']} ({k['max']}p)"
-      b_val = row_edits.get(col_name, b_detay.get(k["ad"], "-"))
+
+      # Herhangi bir hoca bu kriter için "-" girmiş mi?
+      kriter_tire_mi = False
+      for hk in ["hoca1", "hoca2", "hoca3"]:
+        hk_detay = v.get("barem_detaylari", {}).get(hk, {}).get(sinav_key, {})
+        if str(hk_detay.get(k["ad"], "")).strip() == "-":
+          kriter_tire_mi = True
+          break
+
+      b_val = b_detay.get(k["ad"], "-")
       s_bval = str(b_val).strip().upper() if b_val is not None else "-"
 
-      if s_bval == "G":
+      if kriter_tire_mi:
+        val_display = "-"
+      elif s_bval == "G":
         val_display = "G"
         has_g = True
       elif b_val is None or s_bval in ["", "-", "NONE", "NAN"]:
@@ -468,7 +489,7 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
 
       row[col_name] = val_display
 
-    row["TOPLAM"] = "G" if has_g else (satir_toplam if satir_toplam > 0 else "-")
+    row["TOPLAM"] = "G" if has_g else (str(satir_toplam) if satir_toplam > 0 else "-")
     barem_rows.append(row)
 
   if barem_rows and guncel_kriterler:
@@ -493,36 +514,15 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
           ),
       )
 
-    # Gri Satır Vurgulama Fonksiyonu
-    def highlight_g_rows(row):
-      is_g = any(str(val).strip().upper() == "G" for val in row.values)
-      if is_g:
-        return [
-            "background-color: #d3d3d3; color: #333333; font-weight: bold"
-        ] * len(row)
-      return [""] * len(row)
-
-    try:
-      styled_df = df_barem.style.apply(highlight_g_rows, axis=1)
-      duzenlenen_barem_df = st.data_editor(
-          styled_df,
-          use_container_width=True,
-          hide_index=True,
-          disabled=disabled_cols,
-          column_config=column_config_barem,
-          key=editor_key,
-          height=350,
-      )
-    except Exception:
-      duzenlenen_barem_df = st.data_editor(
-          df_barem,
-          use_container_width=True,
-          hide_index=True,
-          disabled=disabled_cols,
-          column_config=column_config_barem,
-          key=editor_key,
-          height=350,
-      )
+    duzenlenen_barem_df = st.data_editor(
+        df_barem,
+        use_container_width=True,
+        hide_index=True,
+        disabled=disabled_cols,
+        column_config=column_config_barem,
+        key=f"editor_barem_notlar_{hoca_kodu}_{sinav_key}",
+        height=350,
+    )
 
     # --- YEŞİL KAYDET BUTONU YERLEŞTİRME VE KAYDETME MANTIĞI ---
     with top_save_container:
@@ -613,24 +613,10 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
             if toplam_cell_val == "G":
               is_g_student = True
 
-            if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
-              st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
-            if (
-                hoca_kodu
-                not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"]
-            ):
-              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                  hoca_kodu
-              ] = {}
-            if (
-                sinav_key
-                not in st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                    hoca_kodu
-                ]
-            ):
-              st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hoca_kodu][
-                  sinav_key
-              ] = {}
+            for hk in ["hoca1", "hoca2", "hoca3"]:
+              st.session_state.ogrenciler[ogr_no].setdefault(
+                  "barem_detaylari", {}
+              ).setdefault(hk, {}).setdefault(sinav_key, {})
 
             for k in guncel_kriterler:
               col_name = f"{k['ad']} ({k['max']}p)"
@@ -639,11 +625,18 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
               s_val_upper = s_val.upper()
 
               if s_val_upper == "G":
-                st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
-                    hoca_kodu
-                ][sinav_key][k["ad"]] = "G"
+                for hk in ["hoca1", "hoca2", "hoca3"]:
+                  st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hk][
+                      sinav_key
+                  ][k["ad"]] = "G"
                 is_g_student = True
-              elif s_val in ["", "-", "NONE", "NULL"]:
+              elif s_val == "-":
+                # '-' seçeneğini diğer tüm hocaların bu kriterine senkronize et
+                for hk in ["hoca1", "hoca2", "hoca3"]:
+                  st.session_state.ogrenciler[ogr_no]["barem_detaylari"][hk][
+                      sinav_key
+                  ][k["ad"]] = "-"
+              elif s_val in ["", "NONE", "NULL"]:
                 st.session_state.ogrenciler[ogr_no]["barem_detaylari"][
                     hoca_kodu
                 ][sinav_key][k["ad"]] = "-"
@@ -655,24 +648,27 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
                 calc_toplam += val_int
 
             if is_g_student:
-              final_sınav_notu = "G"
-            elif (
-                toplam_cell_val
-                and toplam_cell_val != "-"
-                and toplam_cell_val != "G"
-            ):
-              try:
-                final_sınav_notu = round(
-                    float(toplam_cell_val.replace(",", "."))
-                )
-              except Exception:
-                final_sınav_notu = calc_toplam
+              st.session_state.ogrenciler[ogr_no]["hoca1"][sinav_key] = "G"
+              st.session_state.ogrenciler[ogr_no]["hoca2"][sinav_key] = "G"
+              st.session_state.ogrenciler[ogr_no]["hoca3"][sinav_key] = "G"
             else:
-              final_sınav_notu = calc_toplam
+              if (
+                  toplam_cell_val
+                  and toplam_cell_val != "-"
+                  and toplam_cell_val != "G"
+              ):
+                try:
+                  final_sınav_notu = round(
+                      float(toplam_cell_val.replace(",", "."))
+                  )
+                except Exception:
+                  final_sınav_notu = calc_toplam
+              else:
+                final_sınav_notu = calc_toplam
 
-            st.session_state.ogrenciler[ogr_no][hoca_kodu][
-                sinav_key
-            ] = final_sınav_notu
+              st.session_state.ogrenciler[ogr_no][hoca_kodu][
+                  sinav_key
+              ] = final_sınav_notu
 
           verileri_sheets_kaydet(
               st.session_state.ogrenciler, st.session_state.baremler
@@ -914,7 +910,13 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
 
       eski_deger = st.session_state.ogrenciler[ogr_no][hoca_kodu][k]
       if islenmis_deger != eski_deger:
-        st.session_state.ogrenciler[ogr_no][hoca_kodu][k] = islenmis_deger
+        if islenmis_deger == "G":
+          # "G" girildiyse tüm hocalarda "G" yap
+          st.session_state.ogrenciler[ogr_no]["hoca1"][k] = "G"
+          st.session_state.ogrenciler[ogr_no]["hoca2"][k] = "G"
+          st.session_state.ogrenciler[ogr_no]["hoca3"][k] = "G"
+        else:
+          st.session_state.ogrenciler[ogr_no][hoca_kodu][k] = islenmis_deger
         degisiklik_var_mi = True
 
     if hata_mesaji:
