@@ -425,6 +425,10 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
     b_detay = (
         v.get("barem_detaylari", {}).get(hoca_kodu, {}).get(sinav_key, {})
     )
+    mevcut_sınav_notu = (
+        str(v.get(hoca_kodu, {}).get(sinav_key, "")).strip().upper()
+    )
+
     row = {
         "Sıra": v["sira"],
         "Ders Kodu": v["kod"],
@@ -433,7 +437,8 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         "Ad Soyad": v["ad"],
     }
     satir_toplam = 0
-    has_g = False
+    has_g = mevcut_sınav_notu == "G"
+
     for k in guncel_kriterler:
       b_val = b_detay.get(k["ad"], "-")
       s_bval = str(b_val).strip().upper() if b_val is not None else "-"
@@ -453,14 +458,22 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
 
       row[f"{k['ad']} ({k['max']}p)"] = val_display
 
-    row["TOPLAM"] = "G" if has_g else satir_toplam
+    row["TOPLAM"] = "G" if has_g else (satir_toplam if satir_toplam > 0 else "-")
     barem_rows.append(row)
 
   if barem_rows and guncel_kriterler:
     df_barem = pd.DataFrame(barem_rows)
-    disabled_cols = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad", "TOPLAM"]
+    # TOPLAM sütununun kilidini açtık (disabled_cols içinden çıkardık)
+    disabled_cols = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad"]
 
-    column_config_barem = {}
+    column_config_barem = {
+        "TOPLAM": st.column_config.TextColumn(
+            label="TOPLAM",
+            help=(
+                "Toplam not. Buraya 'G' (Girmedi) veya toplam puan yazabilirsiniz."
+            ),
+        )
+    }
     for k in guncel_kriterler:
       col_name = f"{k['ad']} ({k['max']}p)"
       column_config_barem[col_name] = st.column_config.TextColumn(
@@ -502,6 +515,28 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         # Kontrol: Limit aşımı var mı veya geçersiz bir metin girilmiş mi?
         for _, row in duzenlenen_barem_df.iterrows():
           ogr_ad = row["Ad Soyad"]
+
+          # TOPLAM hücresine özel kontrol
+          toplam_val_str = (
+              str(row.get("TOPLAM", "")).strip().upper()
+              if pd.notna(row.get("TOPLAM"))
+              else ""
+          )
+          if toplam_val_str and toplam_val_str not in ["G", "-", ""]:
+            try:
+              t_num = float(toplam_val_str.replace(",", "."))
+              if t_num < 0 or t_num > 100:
+                hatali_girisler.append(
+                    f"• **{ogr_ad}** — **TOPLAM** notu `{toplam_val_str}` olamaz!"
+                    " (0-100 veya 'G' girilebilir)"
+                )
+            except Exception:
+              hatali_girisler.append(
+                  f"• **{ogr_ad}** — **TOPLAM** sütununa girilen"
+                  f" `{toplam_val_str}` değeri geçersizdir! (Sadece sayı, `G` veya"
+                  " `-` girilebilir)"
+              )
+
           for k in guncel_kriterler:
             col_name = f"{k['ad']} ({k['max']}p)"
             val = row.get(col_name, "-")
@@ -540,6 +575,14 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
             ogr_no = str(row["No"])
             calc_toplam = 0
             is_g_student = False
+
+            toplam_cell_val = (
+                str(row.get("TOPLAM", "")).strip().upper()
+                if pd.notna(row.get("TOPLAM"))
+                else ""
+            )
+            if toplam_cell_val == "G":
+              is_g_student = True
 
             if "barem_detaylari" not in st.session_state.ogrenciler[ogr_no]:
               st.session_state.ogrenciler[ogr_no]["barem_detaylari"] = {}
@@ -582,7 +625,22 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
                 ][sinav_key][k["ad"]] = val_int
                 calc_toplam += val_int
 
-            final_sınav_notu = "G" if is_g_student else calc_toplam
+            if is_g_student:
+              final_sınav_notu = "G"
+            elif (
+                toplam_cell_val
+                and toplam_cell_val != "-"
+                and toplam_cell_val != "G"
+            ):
+              try:
+                final_sınav_notu = round(
+                    float(toplam_cell_val.replace(",", "."))
+                )
+              except Exception:
+                final_sınav_notu = calc_toplam
+            else:
+              final_sınav_notu = calc_toplam
+
             st.session_state.ogrenciler[ogr_no][hoca_kodu][
                 sinav_key
             ] = final_sınav_notu
