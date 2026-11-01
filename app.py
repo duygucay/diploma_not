@@ -389,7 +389,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
   guncel_kriterler = st.session_state.baremler[sinav_key]
   mevcut_toplam = sum(int(k["max"]) for k in guncel_kriterler)
 
-  # --- MEVCUT BAREM TOPLAMI SATIRININ ÜZERİNDEKİ YEŞİL KAYDET BUTONU KONTEYNERİ ---
   top_save_container = st.container()
 
   if mevcut_toplam > 100:
@@ -402,7 +401,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
 
   st.markdown("##### 📝 Öğrenci Barem Notları Girişi")
 
-  # --- BAREM HATA MESAJI KONTEYNERİ (Arama kutusunun ÜSTÜNDE) ---
   barem_msg_container = st.container()
 
   arama_barem_raw = st.text_input(
@@ -411,9 +409,15 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
   )
   arama_barem_metni = tr_lower(arama_barem_raw)
 
+  # Editor canlı yapılan son hücre değişikliklerini okur
+  editor_key = f"editor_barem_notlar_{hoca_kodu}_{sinav_key}"
+  edited_changes = {}
+  if editor_key in st.session_state:
+    edited_changes = st.session_state[editor_key].get("edited_rows", {})
+
   barem_rows = []
-  for no, v in sorted(
-      st.session_state.ogrenciler.items(), key=lambda x: x[1]["sira"]
+  for idx_row, (no, v) in enumerate(
+      sorted(st.session_state.ogrenciler.items(), key=lambda x: x[1]["sira"])
   ):
     if (
         arama_barem_metni
@@ -429,6 +433,8 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         str(v.get(hoca_kodu, {}).get(sinav_key, "")).strip().upper()
     )
 
+    row_edits = edited_changes.get(idx_row, {})
+
     row = {
         "Sıra": v["sira"],
         "Ders Kodu": v["kod"],
@@ -437,10 +443,14 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         "Ad Soyad": v["ad"],
     }
     satir_toplam = 0
-    has_g = mevcut_sınav_notu == "G"
+    has_g = (
+        mevcut_sınav_notu == "G"
+        or str(row_edits.get("TOPLAM", "")).strip().upper() == "G"
+    )
 
     for k in guncel_kriterler:
-      b_val = b_detay.get(k["ad"], "-")
+      col_name = f"{k['ad']} ({k['max']}p)"
+      b_val = row_edits.get(col_name, b_detay.get(k["ad"], "-"))
       s_bval = str(b_val).strip().upper() if b_val is not None else "-"
 
       if s_bval == "G":
@@ -456,14 +466,13 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         except Exception:
           val_display = "-"
 
-      row[f"{k['ad']} ({k['max']}p)"] = val_display
+      row[col_name] = val_display
 
     row["TOPLAM"] = "G" if has_g else (satir_toplam if satir_toplam > 0 else "-")
     barem_rows.append(row)
 
   if barem_rows and guncel_kriterler:
     df_barem = pd.DataFrame(barem_rows)
-    # TOPLAM sütununun kilidini açtık (disabled_cols içinden çıkardık)
     disabled_cols = ["Sıra", "Ders Kodu", "Yürütücü", "No", "Ad Soyad"]
 
     column_config_barem = {
@@ -484,15 +493,36 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
           ),
       )
 
-    duzenlenen_barem_df = st.data_editor(
-        df_barem,
-        use_container_width=True,
-        hide_index=True,
-        disabled=disabled_cols,
-        column_config=column_config_barem,
-        key=f"editor_barem_notlar_{hoca_kodu}_{sinav_key}",
-        height=350,
-    )
+    # Gri Satır Vurgulama Fonksiyonu
+    def highlight_g_rows(row):
+      is_g = any(str(val).strip().upper() == "G" for val in row.values)
+      if is_g:
+        return [
+            "background-color: #d3d3d3; color: #333333; font-weight: bold"
+        ] * len(row)
+      return [""] * len(row)
+
+    try:
+      styled_df = df_barem.style.apply(highlight_g_rows, axis=1)
+      duzenlenen_barem_df = st.data_editor(
+          styled_df,
+          use_container_width=True,
+          hide_index=True,
+          disabled=disabled_cols,
+          column_config=column_config_barem,
+          key=editor_key,
+          height=350,
+      )
+    except Exception:
+      duzenlenen_barem_df = st.data_editor(
+          df_barem,
+          use_container_width=True,
+          hide_index=True,
+          disabled=disabled_cols,
+          column_config=column_config_barem,
+          key=editor_key,
+          height=350,
+      )
 
     # --- YEŞİL KAYDET BUTONU YERLEŞTİRME VE KAYDETME MANTIĞI ---
     with top_save_container:
@@ -516,7 +546,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         for _, row in duzenlenen_barem_df.iterrows():
           ogr_ad = row["Ad Soyad"]
 
-          # TOPLAM hücresine özel kontrol
           toplam_val_str = (
               str(row.get("TOPLAM", "")).strip().upper()
               if pd.notna(row.get("TOPLAM"))
@@ -768,7 +797,6 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
       " Notlar anında Google E-Tablonuza kaydedilir."
   )
 
-  # --- HOCA SAYFASI MESAJ KONTEYNERİ (Arama kutusunun ÜSTÜNDE) ---
   hoca_msg_container = st.container()
 
   arama_raw = st.text_input(
@@ -892,7 +920,6 @@ def hoca_sekmesi_olustur(hoca_kodu, hoca_adi, hedef_liste):
     if hata_mesaji:
       break
 
-  # Hata mesajını ARAMA KUTUSUNUN ÜSTÜNDEKİ konteynere basar
   if hata_mesaji:
     hoca_msg_container.error(hata_mesaji)
   elif degisiklik_var_mi:
