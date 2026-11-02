@@ -9,19 +9,21 @@ from streamlit_gsheets import GSheetsConnection
 PAROLA = "dp2026"
 
 if "giris_yapildi" not in st.session_state:
-    st.session_state.giris_yapildi = False
+  st.session_state.giris_yapildi = False
 
 if not st.session_state.giris_yapildi:
-    st.title("🔒 Diploma Projesi Not - Giriş Paneli")
-    girilen_sifre = st.text_input("Lütfen erişim şifresini giriniz:", type="password")
-    if st.button("Giriş Yap"):
-        if girilen_sifre == PAROLA:
-            st.session_state.giris_yapildi = True
-            st.success("Giriş başarılı!")
-            st.rerun()
-        else:
-            st.error("Hatalı şifre!")
-    st.stop()  # Şifre doğru girilene kadar kodun geri kalanını çalıştırmaz
+  st.title("🔒 Diploma Projesi Not - Giriş Paneli")
+  girilen_sifre = st.text_input(
+      "Lütfen erişim şifresini giriniz:", type="password"
+  )
+  if st.button("Giriş Yap"):
+    if girilen_sifre == PAROLA:
+      st.session_state.giris_yapildi = True
+      st.success("Giriş başarılı!")
+      st.rerun()
+    else:
+      st.error("Hatalı şifre!")
+  st.stop()
 
 # --- SAYFA VE ARAYÜZ AYARLARI ---
 st.set_page_config(
@@ -113,68 +115,91 @@ def verileri_sheets_oku():
   baremler = {}
   try:
     df = conn.read(ttl=0)
-    if not df.empty and "No" in df.columns:
-      for _, row in df.iterrows():
-        no = str(row["No"])
-        barem_detay_str = (
-            str(row.get("barem_detaylari", "{}"))
-            if pd.notna(row.get("barem_detaylari"))
+    if df is not None and not df.empty:
+      df.columns = df.columns.astype(str).str.strip()
+
+      if "No" in df.columns:
+        for _, row in df.iterrows():
+          raw_no = row["No"]
+          if pd.isna(raw_no):
+            continue
+          try:
+            no = str(int(float(raw_no)))
+          except Exception:
+            no = str(raw_no).strip()
+
+          barem_detay_str = (
+              str(row.get("barem_detaylari", "{}"))
+              if pd.notna(row.get("barem_detaylari"))
+              else "{}"
+          )
+          try:
+            b_detay = json.loads(barem_detay_str)
+          except Exception:
+            b_detay = {}
+
+          ogrenciler[no] = {
+              "sira": int(row["Sira"]) if pd.notna(row.get("Sira")) else 0,
+              "kod": (
+                  str(row["Ders Kodu"])
+                  if pd.notna(row.get("Ders Kodu"))
+                  else ""
+              ),
+              "yurutucu": (
+                  str(row["Yurutucu"]) if pd.notna(row.get("Yurutucu")) else ""
+              ),
+              "ad": (
+                  str(row["Ad Soyad"]) if pd.notna(row.get("Ad Soyad")) else ""
+              ),
+              "hoca1": {
+                  k: str(row.get(f"h1_{k}", ""))
+                  if pd.notna(row.get(f"h1_{k}"))
+                  else ""
+                  for k in not_anahtarlari
+              },
+              "hoca2": {
+                  k: str(row.get(f"h2_{k}", ""))
+                  if pd.notna(row.get(f"h2_{k}"))
+                  else ""
+                  for k in not_anahtarlari
+              },
+              "hoca3": {
+                  k: str(row.get(f"h3_{k}", ""))
+                  if pd.notna(row.get(f"h3_{k}"))
+                  else ""
+                  for k in not_anahtarlari
+              },
+              "barem_detaylari": b_detay,
+          }
+
+        g_senkronize_et(ogrenciler)
+
+        baremler_str = (
+            str(df.iloc[0].get("global_baremler", "{}"))
+            if "global_baremler" in df.columns
+            and pd.notna(df.iloc[0].get("global_baremler"))
             else "{}"
         )
         try:
-          b_detay = json.loads(barem_detay_str)
+          baremler = json.loads(baremler_str)
+          if any(k in baremler for k in ["hoca1", "hoca2", "hoca3"]):
+            duzeltilmis = {}
+            for hk in ["hoca1", "hoca2", "hoca3"]:
+              if hk in baremler and isinstance(baremler[hk], dict):
+                for sk, kl in baremler[hk].items():
+                  if sk not in duzeltilmis and kl:
+                    duzeltilmis[sk] = kl
+            baremler = duzeltilmis
         except Exception:
-          b_detay = {}
+          baremler = {}
 
-        ogrenciler[no] = {
-            "sira": int(row["Sira"]),
-            "kod": str(row["Ders Kodu"]),
-            "yurutucu": str(row["Yurutucu"]),
-            "ad": str(row["Ad Soyad"]),
-            "hoca1": {
-                k: str(row.get(f"h1_{k}", ""))
-                if pd.notna(row.get(f"h1_{k}"))
-                else ""
-                for k in not_anahtarlari
-            },
-            "hoca2": {
-                k: str(row.get(f"h2_{k}", ""))
-                if pd.notna(row.get(f"h2_{k}"))
-                else ""
-                for k in not_anahtarlari
-            },
-            "hoca3": {
-                k: str(row.get(f"h3_{k}", ""))
-                if pd.notna(row.get(f"h3_{k}"))
-                else ""
-                for k in not_anahtarlari
-            },
-            "barem_detaylari": b_detay,
-        }
-
-      g_senkronize_et(ogrenciler)
-
-      baremler_str = (
-          str(df.iloc[0].get("global_baremler", "{}"))
-          if "global_baremler" in df.columns
-          and pd.notna(df.iloc[0].get("global_baremler"))
-          else "{}"
-      )
-      try:
-        baremler = json.loads(baremler_str)
-        if any(k in baremler for k in ["hoca1", "hoca2", "hoca3"]):
-          duzeltilmis = {}
-          for hk in ["hoca1", "hoca2", "hoca3"]:
-            if hk in baremler and isinstance(baremler[hk], dict):
-              for sk, kl in baremler[hk].items():
-                if sk not in duzeltilmis and kl:
-                  duzeltilmis[sk] = kl
-          baremler = duzeltilmis
-      except Exception:
-        baremler = {}
-      return ogrenciler, baremler
-  except Exception:
-    pass
+        if ogrenciler:
+          return ogrenciler, baremler
+  except Exception as e:
+    st.warning(
+        f"⚠️ Google Sheets verisi okunamadı, varsayılan liste yüklendi:"
+        f" `{e}`"
+    )
 
   for idx, (kod, yurutucu, numara, ad) in enumerate(
       ogrenci_ham_verileri, start=1
@@ -461,7 +486,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         v.get("barem_detaylari", {}).get(hoca_kodu, {}).get(sinav_key, {})
     )
 
-    # Herhangi bir hocada "G" girilmiş mi kontrol et
     has_g = any(
         str(v.get(hk, {}).get(sinav_key, "")).strip().upper() == "G"
         for hk in ["hoca1", "hoca2", "hoca3"]
@@ -479,7 +503,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
     for k in guncel_kriterler:
       col_name = f"{k['ad']} ({k['max']}p)"
 
-      # Herhangi bir hoca bu kriter için "-" girmiş mi?
       kriter_tire_mi = False
       for hk in ["hoca1", "hoca2", "hoca3"]:
         hk_detay = v.get("barem_detaylari", {}).get(hk, {}).get(sinav_key, {})
@@ -532,7 +555,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
           ),
       )
 
-    # GRİ SATIR VURGULAMA FONKSİYONU
     def highlight_g_rows(row):
       is_g = any(str(val).strip().upper() == "G" for val in row.values)
       if is_g:
@@ -553,7 +575,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
         height=350,
     )
 
-    # --- YEŞİL KAYDET BUTONU YERLEŞTİRME VE KAYDETME MANTIĞI ---
     with top_save_container:
       kaydet_tiklandi = st.button(
           "💾 Barem Notlarını Kaydet ve Hoca Sayfasına Aktar",
@@ -571,7 +592,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
       else:
         hatali_girisler = []
 
-        # Kontrol: Limit aşımı var mı veya geçersiz bir metin girilmiş mi?
         for _, row in duzenlenen_barem_df.iterrows():
           ogr_ad = row["Ad Soyad"]
 
@@ -628,7 +648,6 @@ def barem_dialog_goster(hoca_kodu, hoca_adi, sinav_key):
               + "\n".join(hatali_girisler)
           )
         else:
-          # Hata yoksa Hoca Sayfası ve Google Sheets'e kaydet
           for _, row in duzenlenen_barem_df.iterrows():
             ogr_no = str(row["No"])
             calc_toplam = 0
